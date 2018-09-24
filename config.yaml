@@ -1,0 +1,9 @@
+kafka.verify: false
+kafka.ca: ""
+kafka.key: ""
+kafka.certificate: ""
+kafka.verbose: false
+# kafka.brokers: "elk-kafka-0-qa.services.cvc.com.br:9092, elk-kafka-1-qa.services.cvc.com.br:9092, elk-kafka-2-qa.services.cvc.com.br:9092"
+kafka.brokers: "localhost:9092"
+web.listen.addr: :9201
+web.telemetry.path: /metrics
