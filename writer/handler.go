@@ -63,16 +63,8 @@ func protoToSamples(req *prompb.WriteRequest) model.Samples {
 }
 
 func sendSamples(w config.Writer, samples model.Samples) {
-	// begin := time.Now()
-
 	err := w.Write(samples)
-
-	fmt.Printf("%+v\n", err)
-	// duration := time.Since(begin).Seconds()
-	// if err != nil {
-	// 	log.With("num_samples", len(samples)).With("storage", w.Name()).With("err", err).Warnf("Error sending samples to remote storage")
-	// 	config.FailedSamples.WithLabelValues(w.Name()).Add(float64(len(samples)))
-	// }
-	// config.SentSamples.WithLabelValues(w.Name()).Add(float64(len(samples)))
-	// config.SentBatchDuration.WithLabelValues(w.Name()).Observe(duration)
+	if err != nil {
+		fmt.Println("Error sending samples to remote storage")
+	}
 }
