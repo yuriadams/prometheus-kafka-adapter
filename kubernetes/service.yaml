@@ -1,12 +1,12 @@
 kind: Service
 apiVersion: v1
 metadata:
-  name: elasticsearch-adapter-service
+  name: kafka-adapter-service
   labels:
-    k8s-app: elasticsearch-adapter
+    k8s-app: kafka-adapter
 spec:
   selector:
-    app: elasticsearch-adapter
+    app: kafka-adapter
   ports:
    - name: web
      protocol: TCP

@@ -1,9 +1,9 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: elasticsearch-adapter
+  name: kafka-adapter
   labels:
-    k8s-app: elasticsearch-adapter
+    k8s-app: kafka-adapter
 spec:
   selector:
     matchExpressions:
