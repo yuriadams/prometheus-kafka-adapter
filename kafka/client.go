@@ -1,6 +1,9 @@
 package kafka
 
 import (
+	"fmt"
+	"math"
+
 	"github.com/Shopify/sarama"
 	"github.com/prometheus/common/model"
 
@@ -8,18 +11,15 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"io/ioutil"
 	"log"
-	"net/http"
 	"os"
 	"strings"
 	"time"
 )
 
-// NewServer Mestre Bimba Blablabla
-func NewServer(brokers string, verbose bool, certFile string, keyFile string, caFile string, verifySsl bool) *Server {
-	flag.Parse()
+// NewClient Mestre Bimba Blablabla
+func NewClient(brokers string, verbose bool, certFile string, keyFile string, caFile string, verifySsl bool) *Client {
 
 	if verbose {
 		sarama.Logger = log.New(os.Stdout, "[sarama] ", log.LstdFlags)
@@ -33,17 +33,12 @@ func NewServer(brokers string, verbose bool, certFile string, keyFile string, ca
 	brokerList := strings.Split(brokers, ",")
 	log.Printf("Kafka brokers: %s", strings.Join(brokerList, ", "))
 
-	server := &Server{
+	client := &Client{
 		DataCollector:     newDataCollector(brokerList, certFile, keyFile, caFile, verifySsl),
 		AccessLogProducer: newAccessLogProducer(brokerList, certFile, keyFile, caFile, verifySsl),
 	}
-	defer func() {
-		if err := server.Close(); err != nil {
-			log.Println("Failed to close server", err)
-		}
-	}()
 
-	return server
+	return client
 }
 
 func createTlsConfiguration(certFile string, keyFile string, caFile string, verifySsl bool) (t *tls.Config) {
@@ -71,115 +66,74 @@ func createTlsConfiguration(certFile string, keyFile string, caFile string, veri
 	return t
 }
 
-type Server struct {
+type Client struct {
 	DataCollector     sarama.SyncProducer
 	AccessLogProducer sarama.AsyncProducer
 }
 
-func (s *Server) Close() error {
-	if err := s.DataCollector.Close(); err != nil {
+type Metric struct {
+	Value     float64                `json:"value"`
+	Timestamp time.Time              `json:"@timestamp"`
+	Labels    map[string]interface{} `json:"labels"`
+}
+
+func (c *Client) Close() error {
+	if err := c.DataCollector.Close(); err != nil {
 		log.Println("Failed to shut down data collector cleanly", err)
 	}
 
-	if err := s.AccessLogProducer.Close(); err != nil {
+	if err := c.AccessLogProducer.Close(); err != nil {
 		log.Println("Failed to shut down access log producer cleanly", err)
 	}
 
 	return nil
 }
 
-func (s *Server) Handler() http.Handler {
-	return s.withAccessLog(s.collectQueryStringData())
-}
-
-func (s *Server) Write(samples model.Samples) error {
-	println("********************************")
-	println("Queima raparigal!!!!!!!!")
-	// httpServer := &http.Server{
-	// 	Addr:    addr,
-	// 	Handler: s.Handler(),
-	// }
-	//
-	// log.Printf("Listening for requests on %s...\n", addr)
+func (c *Client) Write(samples model.Samples) error {
+	c.produce(samples)
 	return nil
 }
 
-func (s *Server) collectQueryStringData() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" {
-			http.NotFound(w, r)
-			return
+func (c *Client) produce(samples model.Samples) error {
+	// fmt.Printf("%+v\n", samples)
+	for _, s := range samples {
+		v := float64(s.Value)
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			fmt.Printf("cannot send value %f to Kafka, skipping sample %#v", v, s)
+			continue
+		}
+
+		document := Metric{v, s.Timestamp.Time(), buildLabels(s.Metric)}
+		documentJSON, err := json.Marshal(document)
+		fmt.Printf("%+v\n", string(documentJSON))
+		if err != nil {
+			fmt.Printf("error while marshaling document, err: %v", err)
+			continue
 		}
 
 		// We are not setting a message key, which means that all messages will
 		// be distributed randomly over the different partitions.
-		partition, offset, err := s.DataCollector.SendMessage(&sarama.ProducerMessage{
-			Topic: "important",
-			Value: sarama.StringEncoder(r.URL.RawQuery),
+		partition, offset, err := c.DataCollector.SendMessage(&sarama.ProducerMessage{
+			Topic: "prometheus",
+			Value: sarama.StringEncoder(documentJSON),
 		})
 
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintf(w, "Failed to store your data:, %s", err)
-		} else {
-			// The tuple (topic, partition, offset) can be used as a unique identifier
-			// for a message in a Kafka cluster.
-			fmt.Fprintf(w, "Your data is stored with unique identifier important/%d/%d", partition, offset)
+			return fmt.Errorf("Failed to store your data:, %s", err)
 		}
-	})
-}
 
-type accessLogEntry struct {
-	Method       string  `json:"method"`
-	Host         string  `json:"host"`
-	Path         string  `json:"path"`
-	IP           string  `json:"ip"`
-	ResponseTime float64 `json:"response_time"`
-
-	encoded []byte
-	err     error
-}
-
-func (ale *accessLogEntry) ensureEncoded() {
-	if ale.encoded == nil && ale.err == nil {
-		ale.encoded, ale.err = json.Marshal(ale)
+		fmt.Printf("Your data is stored with unique identifier important/%d/%d", partition, offset)
+		return nil
 	}
+	return nil
 }
 
-func (ale *accessLogEntry) Length() int {
-	ale.ensureEncoded()
-	return len(ale.encoded)
-}
-
-func (ale *accessLogEntry) Encode() ([]byte, error) {
-	ale.ensureEncoded()
-	return ale.encoded, ale.err
-}
-
-func (s *Server) withAccessLog(next http.Handler) http.Handler {
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		started := time.Now()
-
-		next.ServeHTTP(w, r)
-
-		entry := &accessLogEntry{
-			Method:       r.Method,
-			Host:         r.Host,
-			Path:         r.RequestURI,
-			IP:           r.RemoteAddr,
-			ResponseTime: float64(time.Since(started)) / float64(time.Second),
-		}
-
-		// We will use the client's IP address as key. This will cause
-		// all the access log entries of the same IP address to end up
-		// on the same partition.
-		s.AccessLogProducer.Input() <- &sarama.ProducerMessage{
-			Topic: "access_log",
-			Key:   sarama.StringEncoder(r.RemoteAddr),
-			Value: entry,
-		}
-	})
+func buildLabels(m model.Metric) map[string]interface{} {
+	fields := make(map[string]interface{}, len(m))
+	for l, v := range m {
+		fields[string(l)] = string(v)
+	}
+	return fields
 }
 
 func newDataCollector(brokerList []string, certFile string, keyFile string, caFile string, verifySsl bool) sarama.SyncProducer {
@@ -238,4 +192,9 @@ func newAccessLogProducer(brokerList []string, certFile string, keyFile string, 
 	}()
 
 	return producer
+}
+
+// Name identifies the client as an kafka client.
+func (c Client) Name() string {
+	return "kafka"
 }

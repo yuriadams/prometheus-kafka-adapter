@@ -15,7 +15,7 @@ func BuildClient() Writer {
 	cfg := GetConfig()
 
 	if cfg.KafkaBrokers != "" {
-		return kafka.NewServer(
+		return kafka.NewClient(
 			cfg.KafkaBrokers,
 			cfg.KafkaVerbose,
 			cfg.KafkaCertFile,
@@ -26,3 +26,12 @@ func BuildClient() Writer {
 	}
 	return nil
 }
+
+//
+// func CloseClient() {
+// 	defer func() {
+// 		if err := kafka.Close(); err != nil {
+// 			log.Println("Failed to close client", err)
+// 		}
+// 	}()
+// }

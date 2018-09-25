@@ -1,19 +1,18 @@
 package writer
 
 import (
+	"fmt"
 	"io/ioutil"
 	"net/http"
-	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/yuriadams/prometheus-kafka-adapter/config"
 )
 
-// Handle receives the payload from Prometheus, format and send to Elasticsearch
+// Handle receives the payload from Prometheus, format and send to Kafka
 func Handle(w http.ResponseWriter, r *http.Request) {
 	compressed, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -27,7 +26,7 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req remote.WriteRequest
+	var req prompb.WriteRequest
 	if err := proto.Unmarshal(reqBuf, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -36,13 +35,14 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 	samples := protoToSamples(&req)
 	config.ReceivedSamples.Add(float64(len(samples)))
 
-	writer, _ := config.BuildClient()
+	writer := config.BuildClient()
 	go func(rw config.Writer) {
 		sendSamples(rw, samples)
 	}(writer)
+
 }
 
-func protoToSamples(req *remote.WriteRequest) model.Samples {
+func protoToSamples(req *prompb.WriteRequest) model.Samples {
 	var samples model.Samples
 	for _, ts := range req.Timeseries {
 		metric := make(model.Metric, len(ts.Labels))
@@ -54,7 +54,7 @@ func protoToSamples(req *remote.WriteRequest) model.Samples {
 			samples = append(samples, &model.Sample{
 				Metric:    metric,
 				Value:     model.SampleValue(s.Value),
-				Timestamp: model.Time(s.TimestampMs),
+				Timestamp: model.Time(s.Timestamp),
 			})
 
 		}
@@ -63,15 +63,16 @@ func protoToSamples(req *remote.WriteRequest) model.Samples {
 }
 
 func sendSamples(w config.Writer, samples model.Samples) {
-	begin := time.Now()
+	// begin := time.Now()
 
 	err := w.Write(samples)
 
-	duration := time.Since(begin).Seconds()
-	if err != nil {
-		log.With("num_samples", len(samples)).With("storage", w.Name()).With("err", err).Warnf("Error sending samples to remote storage")
-		config.FailedSamples.WithLabelValues(w.Name()).Add(float64(len(samples)))
-	}
-	config.SentSamples.WithLabelValues(w.Name()).Add(float64(len(samples)))
-	config.SentBatchDuration.WithLabelValues(w.Name()).Observe(duration)
+	fmt.Printf("%+v\n", err)
+	// duration := time.Since(begin).Seconds()
+	// if err != nil {
+	// 	log.With("num_samples", len(samples)).With("storage", w.Name()).With("err", err).Warnf("Error sending samples to remote storage")
+	// 	config.FailedSamples.WithLabelValues(w.Name()).Add(float64(len(samples)))
+	// }
+	// config.SentSamples.WithLabelValues(w.Name()).Add(float64(len(samples)))
+	// config.SentBatchDuration.WithLabelValues(w.Name()).Observe(duration)
 }

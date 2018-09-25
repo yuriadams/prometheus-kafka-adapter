@@ -19,6 +19,7 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/log"
 	"github.com/yuriadams/prometheus-kafka-adapter/config"
 	"github.com/yuriadams/prometheus-kafka-adapter/writer"
@@ -36,7 +37,7 @@ func init() {
 
 func main() {
 	cfg := config.GetConfig()
-	http.Handle(cfg.TelemetryPath, prometheus.Handler())
+	http.Handle(cfg.TelemetryPath, promhttp.Handler())
 
 	http.HandleFunc("/write", writer.Handle)
 
