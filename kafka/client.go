@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 
@@ -9,7 +10,6 @@ import (
 
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"flag"
 	"io/ioutil"
 	"log"
@@ -95,9 +95,9 @@ func (c *Client) Write(samples model.Samples) error {
 }
 
 func (c *Client) produce(samples model.Samples) error {
-	// fmt.Printf("%+v\n", samples)
 	for _, s := range samples {
 		v := float64(s.Value)
+
 		if math.IsNaN(v) || math.IsInf(v, 0) {
 			fmt.Printf("cannot send value %f to Kafka, skipping sample %#v", v, s)
 			continue
@@ -105,14 +105,12 @@ func (c *Client) produce(samples model.Samples) error {
 
 		document := Metric{v, s.Timestamp.Time(), buildLabels(s.Metric)}
 		documentJSON, err := json.Marshal(document)
-		fmt.Printf("%+v\n", string(documentJSON))
+
 		if err != nil {
 			fmt.Printf("error while marshaling document, err: %v", err)
 			continue
 		}
 
-		// We are not setting a message key, which means that all messages will
-		// be distributed randomly over the different partitions.
 		partition, offset, err := c.DataCollector.SendMessage(&sarama.ProducerMessage{
 			Topic: "prometheus",
 			Value: sarama.StringEncoder(documentJSON),
@@ -123,8 +121,8 @@ func (c *Client) produce(samples model.Samples) error {
 		}
 
 		fmt.Printf("Your data is stored with unique identifier important/%d/%d", partition, offset)
-		return nil
 	}
+
 	return nil
 }
 
