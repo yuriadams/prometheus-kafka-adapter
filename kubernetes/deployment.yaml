@@ -5,7 +5,7 @@ metadata:
   labels:
     app: kafka-adapter
 spec:
-  replicas: 1
+  replicas: 4
   selector:
     matchLabels:
       app: kafka-adapter
@@ -24,7 +24,14 @@ spec:
           name: kafka-adapter-config-volume
       containers:
       - name: kafka-adapter
-        image: yuriadams/prometheus-kafka-adapter:latest
+        image: yuriadams/prometheus-kafka-adapter:stable
+        resources:
+          limits:
+            cpu: "1"
+            memory: "1.5Gi"
+          requests:
+            cpu: 100m
+            memory: "1.5Gi"
         env:
          - name: CONFIG_PATH
            valueFrom:

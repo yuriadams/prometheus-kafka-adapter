@@ -91,6 +91,13 @@ func (c *Client) Close() error {
 
 func (c *Client) Write(samples model.Samples) error {
 	c.produce(samples)
+
+	defer func() {
+		if err := c.Close(); err != nil {
+			log.Fatalln(err)
+		}
+	}()
+
 	return nil
 }
 
